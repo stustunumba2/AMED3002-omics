@@ -1,0 +1,517 @@
+---
+title: "gse combo"
+output: html_document
+date: "2023-05-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## What genes are associated with gene upregulation/downregulation with a high status of SKY92 test which is indicative of worsening condition of multiple myeloma.
+
+# Data and package loading
+```{r}
+
+library(tidyverse)
+library(ggfortify)
+library(RColorBrewer)
+library(GEOquery)
+library(org.Hs.eg.db)
+library(limma)
+library(edgeR)
+library(Glimma)
+library(Homo.sapiens)
+library(gplots)
+library(dplyr)
+library(stringr)
+library(pheatmap)
+library(ggrepel)
+library(DESeq2)
+
+
+# Setting GSE Accession code 
+my_id <- "GSE87900"
+
+
+# Downloading GEO
+gse <- getGEO(my_id)
+# LOok for elements in the data (pheno, assay, feature)
+
+
+gse <- gse[[1]]
+
+
+samples = pData(gse)
+```
+
+
+# Stuart's version
+## Normalise and scale data
+```{r}
+# Checking what kind of normalisation has been performed
+pData(gse)$data_processing[1] # Log2 transformed
+summary(exprs(gse)) # All gene expression is within 0-16, thus confirming it has been log2 transformed.
+
+# Checking whether data has been normalised
+boxplot(exprs(gse), outline = F) # Looks normalised
+
+```
+All genes appear to have a consistent distribution. Thus, we can say it has been normalised.
+## Aample subsetting
+```{r}
+sampleInfo <- pData(gse)
+head(sampleInfo) # We want to use sampleInfo$characteristics_ch1.3 as we are comparing high-risk vs standard MM
+
+table(sampleInfo$characteristics_ch1.3) # Keywords are "High" and "Standard"
+
+#Creating DF with only "characteristics_ch1.3"
+sampleInfo <- sampleInfo[, "characteristics_ch1.3", drop=FALSE]
+
+#Changing name of column to "risks"
+names(sampleInfo)[names(sampleInfo) == "characteristics_ch1.3"] <- "risk"
+head(sampleInfo)
+sampleInfo$risk
+
+#Assigning new info to new columns "riskinfo"
+sampleInfo$riskinfo <- ""
+for(i in 1:nrow(sampleInfo)){
+  if(str_detect(sampleInfo$risk[i], "Standard"))
+  {sampleInfo$riskinfo[i] <- "Standard"}
+  
+  if(str_detect(sampleInfo$risk[i], "High"))
+  {sampleInfo$riskinfo[i] <- "High"}
+ 
+}
+# Getting rid of first column "risk"
+sampleInfo <- sampleInfo[, "riskinfo", drop=FALSE]
+sampleInfo
+
+
+
+```
+
+## Hierarchial clustering ; Correlation matrix
+Hierarchial clustering tells you how the samples may be correlated.
+```{r}
+# Calculate correlation between columns of expression values of gse. "c" stands for complete observations, only pairs of values that are both non-missing will be included in calculations. Missing values excluded. Hierarchial clustering
+corMatrix <- cor(exprs(gse), use ="c")
+pheatmap(corMatrix, annotation_col = sampleInfo)
+```
+There are some groupings of genes that indicates higher risk of more severe complications associated with MM as indicated by the hierarchial clustering. It appears the 4th cluster is associated with gene expression indicating high risks.
+## PCA
+
+```{r}
+
+#PCA analysis
+pca <- prcomp(t(exprs(gse)))
+
+#Joining Principal components to the sample information
+cbind(sampleInfo, pca$x) %>%
+  ggplot(aes(x = PC1, y = PC2, col=riskinfo, label=paste("", riskinfo))) + geom_point() + geom_text_repel() + theme_classic() #Lack of overall structure
+
+```
+It appears that some variances in the data can be explained by the different use of reagents. RNA that were prepared with IVT seems more spread out then ones with GPR. However, there does not seem to be any structure between High risk and Standard risk sky92. The PCA found structure between the reagents in PC1.
+
+## Differential Expression analysis
+Performing variance stabilisation
+In applied statistics, a variance-stabilizing transformation is a data transformation that is specifically chosen either to simplify considerations in graphical exploratory data analysis or to allow the application of simple regression-based or analysis of variance technique --> wikipedia
+
+``` {r}
+design <- model.matrix(~0 + riskinfo, sampleInfo)
+design
+
+colnames(design) <- c("High", "Standard")
+design
+
+#Checking for low expressing genes
+#need to check for false positive
+cutoff <- median(exprs(gse))
+
+#Remove genes that are not expressed
+#Making cutoff at median, meaning that 50% of genes not considered expressed
+
+is_expressed <- exprs(gse) > cutoff
+
+# Isolate for genes expressed in more than 3 samples
+keep <- rowSums(is_expressed) > 3
+
+table(keep)
+# We see that we have kept a shit ton of genes
+
+#Subsetting to only keep what we deem as expressed genes
+gse <- gse[keep,]
+
+#Calcuating relative array weights (closer to 1 is higher quality)
+aw <- arrayWeights(exprs(gse), design)
+aw #Array values are quite high
+
+# Fitting coefficients
+fit <- lmFit(exprs(gse), design, weights = aw)
+
+head(fit$coefficients)
+
+#Compare between samples, define multiple contrasts. Use Bayesian stat to minimize type1 error. eBayes function performs the tests.
+
+contrasts <- makeContrasts(High - Standard, levels = design)
+
+fit2 <- contrasts.fit(fit, contrasts)
+fit2 <- eBayes(fit2)
+head(fit2)
+
+# Summarize the results of Bayes. topTable adjusts p-values, return top genes that meet cutoff supplied as coef. 
+topTable(fit2)
+
+topTable1 <- topTable(fit2, coef=1) # We got 10 genes
+topTable1
+
+
+#How many genes are differentially expressed overall, decideTest
+table(decideTests(fit2)) # 2713 down, 1736 up
+summary(decideTests(fit2)) # 2713 down, 1736 up
+
+```
+
+```{r}
+
+#Calcuating relative array weights (closer to 1 is higher quality)
+aw <- arrayWeights(exprs(gse), design)
+aw #Array values are quite high
+
+# Fitting coefficients
+aw <- arrayWeights(exprs(gse), design)
+aw #Array values are quite high
+
+# Fitting coefficients
+fit <- lmFit(exprs(gse), design, weights = aw)
+head(fit$coefficients)
+
+#Compare between samples, define multiple contrasts. Use Bayesian stat to minimize type1 error. eBayes function performs the tests.
+
+contrasts <- makeContrasts(High - Standard, levels = design)
+
+fit2 <- contrasts.fit(fit, contrasts)
+fit2 <- eBayes(fit2)
+fit2$coefficients
+## Datacamp
+head(fit2)
+
+# Summarize the results of Bayes. topTable adjusts p-values, return top genes that meet cutoff supplied as coef. 
+topTable(fit2)
+
+topTable1 <- topTable(fit2, coef=1) # We got 10 genes
+topTable1
+
+fit2$coefficients
+#How many genes are differential expressed overall, decideTest
+table(decideTests(fit2)) # 2713 down, 1736 up
+summary(decideTests(fit2)) # 2713 down, 1736 up
+```
+
+```{r}
+
+#Annotation data retrieved with fData (assigns gene ID)
+anno <-fData(gse)
+head(anno)
+
+fit2$coefficients
+
+
+anno <-anno[, c("ID", "GB_ACC", "Gene Symbol","ENTREZ_GENE_ID"), drop = FALSE]
+
+fit2$genes <- anno #adding gene annotation to fit2 table
+topTable(fit2)
+
+
+#Volcano plot
+full_results1 <- topTable(fit2, coef=1, number=Inf)
+head(full_results1)
+##Critera; LogFC=<1. Meaning the gene is twice as expressed(biostars)
+full_results2=full_results1|>
+  filter(logFC >= 1)
+full_results2
+# There are duplicated genes in the dataset.
+
+full_results2=full_results1|>
+  filter(logFC >= 1)
+topTable1 <- topTable(fit2, coef=1)
+```
+## Volcano plot
+```{r}
+
+ggplot(full_results1, aes(x = logFC, y = B)) + geom_point()+geom_hline(yintercept= 1.30) + geom_vline(xintercept = -1)+ geom_vline(xintercept=1)+labs(x = "Log2", y="Log10 Pvalue")
+
+
+volcano(fit2, coef = 1, highlight = 15, names = fit2$genes$`Gene Symbol`, lfc.threshold=1) 
+
+
+?volcanoplot
+# Ask grant 4 --> for lab report, we can use any classifier we want.
+
+order(full_results2)
+
+full_resultsdown2=full_results1|>
+  filter(logFC <= -1)
+```
+
+
+
+# Grant's code method; Meena's version
+
+## DGELIST creation
+
+### Gene subsetting
+```{r}
+expr = fData(gse)
+genes = data.frame(expr$`Gene Symbol`, expr$ENTREZ_GENE_ID)
+
+genes$Symbol = expr$`Gene Symbol`
+
+genes$expr..Gene.Symbol. =NULL
+
+duplicated(genes)|>
+  table()
+# 31k genes have been duplicated in the data (.)_(.)
+
+genes =genes %>% 
+  mutate(Symbol2 = stringr::str_remove(Symbol, "///"), Symbol22 = stringr::str_remove(Symbol2, "(\\s+\\w+)")) # Sauce: https://community.rstudio.com/t/how-to-delete-the-second-word-of-a-value-in-a-row/132989
+
+genes$Symbol2 = NULL
+
+ENTREZID <- mapIds(Homo.sapiens, keys = as.character(genes$Symbol22), column = c("ENTREZID"),
+    keytype = "SYMBOL", multiVals = "first")
+
+genes$ENTREZID11 = as.character(ENTREZID)
+
+genes=genes %>% 
+    mutate(ENTREZID1 = coalesce(ENTREZID11,expr.ENTREZ_GENE_ID))
+# Have the original entrzid in the gse data replace the new ENTREz
+## Sauce: https://stackoverflow.com/questions/34071875/replace-a-value-na-with-the-value-from-another-column-in-r
+
+genes =genes %>% 
+  mutate(ENTREZID111 = stringr::str_remove(ENTREZID1, "///"), ENTREZID = stringr::str_remove(ENTREZID111, "(\\s+\\w+)"))
+# Remove slashes and extra entrez in rows
+
+genes[4:6] = NULL
+# Remove excess columns from genes
+
+
+chooseGenes <- which(!duplicated(genes$Symbol22) & !duplicated(genes$ENTREZID))
+# Remove duplicated genes
+
+genes <- genes[chooseGenes, ]
+gse <- gse[chooseGenes, ]
+```
+
+### Sample subsetting
+```{r}
+samples=pData(gse)
+
+## Meena's sample subsetting
+samples$`sky92 status:ch1` = as.factor(samples$`sky92 status:ch1`)
+
+samples$`reagents:ch1`= as.factor(samples$`reagents:ch1`)
+
+samples = samples|>
+  dplyr::select(`sky92 status:ch1`, `reagents:ch1`)
+
+colnames(samples) = c("group", "reagents")
+
+samples=samples|>
+  mutate(group = stringr::str_remove(group,"(\\s+\\w+)" ))
+
+```
+
+
+### Counts subsetting
+```{r}
+counts <- exprs(gse)
+
+rownames(counts) = genes$Symbol22
+
+
+```
+## DGEList cleaning
+```{r}
+
+install.packages("statmod")
+library(statmod)
+DataMM <- DGEList(counts=counts, genes = genes , samples=samples)
+
+
+
+?calcNormFactors()
+
+# Filtering out low expression genes
+#keep <- filterByExpr(DataMM)
+#DataMM <- DataMM[keep, ]
+
+cutoff <- median(exprs(gse))
+
+#Remove genes that are not expressed
+#Making cutoff at median, meaning that 50% of genes not considered expressed
+
+is_expressed <- DataMM$counts> cutoff
+
+# Isolate for genes expressed in more than 3 samples
+keep <- rowSums(is_expressed) > 3
+
+table(keep)
+# We see that we have kept a shit ton of genes
+
+#Subsetting to only keep what we deem as expressed genes
+DataMM <- DataMM[keep,]
+
+## The gene FGFR3 was taken out of the analysis when we filtered it out as a low expression gene. 
+cpm = cpm(DataMM)
+
+DataMM2 <- DataMM
+
+
+```
+
+## Graphs
+```{r}
+## Correlation matrix
+corMatrix <- cor(exprs(gse), use ="c")
+pheatmap(corMatrix, annotation_col = samples)
+# Change colours
+
+## PCA
+
+pca <- prcomp(t(cpm), scale = TRUE)
+autoplot(pca, data =samples , colour = "group")
+```
+## Differential pathway analysis
+```{r}
+
+## Checking normalisation
+
+
+
+
+## Differential analysis
+
+design <- model.matrix(~ group, samples)
+v= voom(DataMM, design, aw, block = DataMM$samples$reagents)
+
+
+fit55 <- lmFit(v, design)
+
+efit55 <- eBayes(fit55)
+
+
+
+dt_fdr <- decideTests(efit55, adjust.method = "fdr", p.value = 0.05, lfc =0.5 )
+summary(dt_fdr)
+
+Downregulated10 = topTable(efit55, coef="groupStandard", adjust.method = "fdr", p.value=0.05,  number = Inf)
+
+Downregulated10
+
+# These are the genes significantly differentially expressed in standard risks. Grant said that to have it be for High risks you just reverse it. If the result in the thing is downregulated. For high risks it is upregulated.
+
+
+volcanoplot(efit55, coef = "groupStandard", highlight = 10, names = efit55$genes$SYMBOL22)
+
+# Found 1,086 DEGs. This is different from original study which found 611 genes. 
+
+
+
+#table3 = topTable(efit55, coef="groupStandard risk", adjust.method = "fdr", p.value=0.05,  number = 3)
+
+
+2^-0.51786676
+
+efit55
+
+volcanoplot(efit55, coef = "groupStandard", highlight = 10, names = efit55$genes$SYMBOL22)
+
+## Differences in the log arised from voom renormalising the counts. Efforts were made to account for this but could not be done!
+
+3.010964	
+
+log2(3.010964)
+
+1/1.590225
+```
+## Gene expression data
+```{r}
+load(url("http://bioinf.wehi.edu.au/software/MSigDB/human_c2_v5p2.rdata"))
+
+# We need to make indicies to match these gene sets to the genes in our
+# expression data (v)
+idx <- ids2indices(Hs.c2, id = v$genes$ENTREZID)
+cam.LCLB <- camera(v, idx, design, contrast = "groupStandard")
+head(cam.LCLB, 5)
+
+cam.LCLB$pathway <- row.names(cam.LCLB)
+trimmedCam_LCLvB <- dplyr::filter(cam.LCLB, grepl("KEGG|REACTOME|BIOCARTA", pathway))
+head(trimmedCam_LCLvB)
+
+```
+Consisten with the article. Most DEGs were significantly 
+
+
+# Things we replicates
+
+- Survivor analysis cannot be conducted because 
+
+- Screening of MM
+- Gene enrichment analysis
+
+## What i want to say:
+
+We are looking at the genes associated with high risks of multiple myeloma's condition worsening. We performed the pca, and differential gene analysis. We are now looking to perform an enrichment analysis using Kegg. However, I think there might be a problem with the entrezid because it has multiple genes in one row--> as seen here.
+I also tried making a dgelist using the data but I think there is also a problem there as when i try to include High risks as a coefficient, it says all genes are upwardly significant.
+
+I also wanted to make sure that since the data is already log2 transformed, that I dont have to do a TMM transformation.
+
+```{r}
+# Gene enrichment analysis
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+
+topTable1$Gene.Symbol <- gsub("CTAG1B", "", topTable1$Gene.Symbol)
+topTable1$Gene.Symbol <-gsub("///", "", topTable1$Gene.Symbol)
+topTable1$Gene.Symbol <- gsub(" ", "", topTable1$Gene.Symbol)
+list(topTable1)
+
+topTable1$ensid = mapIds(org.Hs.eg.db,
+                         keys=topTable1$Gene.Symbol,
+                         column="ENSEMBL",
+                         keytype="SYMBOL",
+                         multiVals="first")
+
+topGensembl <- topTable1[, "ensid", drop=FALSE]
+topGensembl <- topGensembl$ensid
+topGensembl <- topGensembl[-(length(topGensembl)-1):-(length(topGensembl)),]
+
+
+```
+
+```{r}
+id2 <- "GSE24080"
+gse2 <-getGEO(id2)
+length(gse2)
+gse2 <- gse2[[1]]
+gse2
+
+pData(gse2)
+exprs(gse2)
+fData(gse2)
+
+summary(exprs(gse2))
+pData(gse2)$data_processing[1]
+boxplot(exprs(gse2), outline = F)
+
+pData(gse)
+
+list(topTable1)
+
+X <- t(exprs(gse)[rownames(topTable1), rownames(design)])
+Y <- as.factor(pData(gse)[rownames(design), "riskinfo"])
+
+data <- data.frame(Y, X)
+
+```
