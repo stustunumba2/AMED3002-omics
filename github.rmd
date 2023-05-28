@@ -491,7 +491,7 @@ topGensembl <- topGensembl[-(length(topGensembl)-1):-(length(topGensembl)),]
 ```
 
 ```{r}
-id2 <- "GSE24080"
+id2 <- "GSE24080" # this is the new dataset that i'll perform value and survival analysis for CDC7 and PCNA. 
 gse2 <-getGEO(id2)
 length(gse2)
 gse2 <- gse2[[1]]
