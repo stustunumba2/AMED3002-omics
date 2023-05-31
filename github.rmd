@@ -491,7 +491,7 @@ topGensembl <- topGensembl[-(length(topGensembl)-1):-(length(topGensembl)),]
 ```
 
 ```{r}
-id2 <- "GSE24080" # this is the new dataset that i'll perform value and survival analysis for CDC7 and PCNA. 
+id2 <- "GSE24080"
 gse2 <-getGEO(id2)
 length(gse2)
 gse2 <- gse2[[1]]
@@ -500,18 +500,29 @@ gse2
 pData(gse2)
 exprs(gse2)
 fData(gse2)
+pheno2 <- pData(gse2)
+surv <- pData(gse2)[, c("characteristics_ch1.5"), drop = FALSE] # 1 = deceased by 24 months, 0 = alive at 24 months
 
-summary(exprs(gse2))
-pData(gse2)$data_processing[1]
-boxplot(exprs(gse2), outline = F)
+for(i in 1:nrow(surv)){
+  if(str_detect(surv$characteristics_ch1.5[i], "months: 0"))
+  {surv$status[i] <- "Alive"}
+  
+  if(str_detect(surv$characteristics_ch1.5[i], "months: 1"))
+  {surv$status[i] <- "Deceased"}
+ 
+}
 
-pData(gse)
+cbind(surv, pca2$x) %>%
+  ggplot(aes(x = PC1, y = PC2, col=status, label=paste("", status))) + geom_point() + geom_text_repel() + theme_classic()
 
-list(topTable1)
+pca2 <- prcomp(t(exprs(gse2)))
 
-X <- t(exprs(gse)[rownames(topTable1), rownames(design)])
-Y <- as.factor(pData(gse)[rownames(design), "riskinfo"])
-
-data <- data.frame(Y, X)
+anno2 <- fData(gse2)
+anno2 <-anno2[, c("Gene Symbol", "GB_ACC"), drop = FALSE]
+head(anno2)
+anno2 <- anno2[anno2$`Gene Symbol` %in% c("CDC7", "PCNA"), ]
+exprs2 <- exprs(gse2)
+exprs(gse2)
+exprs2 <- exprs2[rownames(exprs2) %in% c("201202_at", "204510_at"), ]
 
 ```
