@@ -450,7 +450,30 @@ trimmedCam_LCLvB <- dplyr::filter(cam.LCLB, grepl("KEGG|REACTOME|BIOCARTA", path
 head(trimmedCam_LCLvB)
 
 ```
-Consisten with the article. Most DEGs were significantly 
+
+Consistent with the article. Most DEGs were significantly upregulated in DNA replication. However, unlike the article. We had found 186 genes associated with DNA replication whereas they had foun 19. 
+## Variation in DEGs in gene enrichment analysis.
+```{r}
+library(kableExtra)
+rownames(efit55)[idx$REACTOME_DNA_REPLICATION]|>
+  kable(col.names = "Genes involved in upregulation in DNA Replication")
+
+DNA_rep_genes = as.data.frame(rownames(efit55)[idx$REACTOME_DNA_REPLICATION])
+
+#https://support.bioconductor.org/p/82456/
+```
+Of the genes they found associated with DNA replication, we had found all of them including PCNA and CDC17 asides from RRM2, BRCA1, GINS3, BRIP1, CDK1, DTL and BARD1.
+## New volcano plot
+
+```{r}
+#BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+EnhancedVolcano(full_results1,
+                lab = full_results1$Gene.Symbol,
+                x = 'logFC',
+                y = 'P.Value',
+                legendLabels = c("NS",  "Significant logFC", " Significant p-value", "Significant in p value and logFC", legendLabSize = 2))
+```
 
 
 # Things we replicates
