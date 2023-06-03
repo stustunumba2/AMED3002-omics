@@ -435,7 +435,7 @@ log2(3.010964)
 
 1/1.590225
 ```
-## Gene expression data
+# Gene enrichment analysis 
 ```{r}
 load(url("http://bioinf.wehi.edu.au/software/MSigDB/human_c2_v5p2.rdata"))
 
@@ -476,19 +476,6 @@ EnhancedVolcano(full_results1,
 ```
 
 
-# Things we replicates
-
-- Survivor analysis cannot be conducted because 
-
-- Screening of MM
-- Gene enrichment analysis
-
-## What i want to say:
-
-We are looking at the genes associated with high risks of multiple myeloma's condition worsening. We performed the pca, and differential gene analysis. We are now looking to perform an enrichment analysis using Kegg. However, I think there might be a problem with the entrezid because it has multiple genes in one row--> as seen here.
-I also tried making a dgelist using the data but I think there is also a problem there as when i try to include High risks as a coefficient, it says all genes are upwardly significant.
-
-I also wanted to make sure that since the data is already log2 transformed, that I dont have to do a TMM transformation.
 
 ```{r}
 # Gene enrichment analysis
