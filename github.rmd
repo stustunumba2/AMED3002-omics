@@ -491,7 +491,7 @@ topGensembl <- topGensembl[-(length(topGensembl)-1):-(length(topGensembl)),]
 ```
 
 ```{r}
-id2 <- "GSE24080"
+id2 <- "GSE24080" # New dataframe to perform survival analysis
 gse2 <-getGEO(id2)
 length(gse2)
 gse2 <- gse2[[1]]
@@ -511,12 +511,12 @@ for(i in 1:nrow(surv)){
   {surv$status[i] <- "Deceased"}
  
 }
+pca2 <- prcomp(t(exprs(gse2)))
 
 cbind(surv, pca2$x) %>%
   ggplot(aes(x = PC1, y = PC2, col=status, label=paste("", status))) + geom_point() + geom_text_repel() + theme_classic()
 
-pca2 <- prcomp(t(exprs(gse2)))
-
+# Ignore this part
 anno2 <- fData(gse2)
 anno2 <-anno2[, c("Gene Symbol", "GB_ACC"), drop = FALSE]
 head(anno2)
@@ -524,5 +524,35 @@ anno2 <- anno2[anno2$`Gene Symbol` %in% c("CDC7", "PCNA"), ]
 exprs2 <- exprs(gse2)
 exprs(gse2)
 exprs2 <- exprs2[rownames(exprs2) %in% c("201202_at", "204510_at"), ]
+str(expr)
+columntype <- class(expr$exprs2)
+print(columntype)
+
+# Performing DE analysis for top 10 and 100 genes
+design2 <- model.matrix(~0 + surv$status)
+colnames(design2) <- c("Alive", "Deceased")
+
+# Setting cutoff at median
+cutoff2 <- median(exprs(gse2))
+is_expressed2 <- exprs(gse2) > cutoff2
+keep2 <- rowSums(is_expressed2) > 3
+table(keep2)
+gse2 <- gse2[keep2,]
+# Calculating relative array weighting and applying to LM
+aw2 <- arrayWeights(exprs(gse2), design2)
+fit2 <- lmFit(exprs(gse2), design2, weights = aw2)
+contrasts2 <- makeContrasts(Alive - Deceased, levels = design2)
+
+fit3 <- contrasts.fit(fit2, contrasts2)
+fit3 <- eBayes(fit3)
+head(fit3)
+
+dt_fdr2 <- decideTests(fit3, adjust.method = "fdr", p.value = 0.05)
+
+surv100 <- topTable(fit3, n=100)
+surv100
+
+rownames_to_keep <- c("201202_at", "204510_at")
+surv100 <- surv100[rownames(surv100) %in% rownames_to_keep, ] # 0 genes kept meaning that CDC7 and PCNA are not in the top 100 DE genes. Findings were not reproducible. 
 
 ```
